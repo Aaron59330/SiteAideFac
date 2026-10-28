@@ -11,7 +11,12 @@ Tout fonctionne dans le navigateur (aucun serveur, aucun compte) : ouvrir `index
 - Dates d'examen avec compte à rebours et rythme conseillé
 - Minuteur Pomodoro (focus)
 - Import de fichiers .txt/.md, export Anki, impression PDF, sauvegarde / restauration JSON
-- **Tableurs** (petit Excel intégré) : formules (SOMME, MOYENNE, SI, SOMME.SI, NB.SI, SOMMEPROD, RECHERCHEV, RANG, dates…),
-  références entre feuilles, recopie par glisser, copier/coller (même depuis Excel), annuler/rétablir, mise en forme,
-  formats (nombre, %, €, date), tri, insertion/suppression de lignes et colonnes, graphiques (barres, courbe, camembert),
-  plusieurs feuilles, import/export CSV, modèles (moyenne du bac, suivi des notes, planning, budget)
+- **Tableurs** (un vrai tableur intégré, à la Excel) :
+  - ruban par onglets (Accueil, Insertion, Mise en page, Formules, Données, Affichage), zone de nom, barre de formule, barre d'état (somme, moyenne…), zoom
+  - ~190 fonctions (maths, statistiques, logique, texte, dates, recherche, finance), aide à la saisie, tableaux dynamiques (SEQUENCE, FILTRE, TRIER, UNIQUE…), noms définis, références entre feuilles
+  - mise en forme complète (police, couleurs, bordures, fusion, renvoi à la ligne, formats de nombre personnalisés), mise en forme conditionnelle (barres, nuances, icônes…), styles de tableau
+  - validation des données (listes déroulantes, cases à cocher), filtres automatiques, tri multi-niveaux, volets figés, lignes/colonnes masquées
+  - tableaux croisés dynamiques (formules), graphiques (8 types, tendance, export PNG), minigraphiques, liens, notes
+  - rechercher/remplacer, valeur cible, supprimer les doublons, texte en colonnes, collage spécial, annuler/rétablir
+  - import/export Excel (.xlsx) et CSV, impression PDF (zone, orientation, échelle)
+  - modèles : moyenne du bac, suivi des notes, planning, budget, facture, emploi du temps, suivi d'habitudes

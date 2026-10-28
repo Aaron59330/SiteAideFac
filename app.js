@@ -25,6 +25,7 @@ function normaliser(d) {
   d.revisions = d.revisions && typeof d.revisions === 'object' ? d.revisions : {};
   d.focus = d.focus && typeof d.focus === 'object' ? d.focus : {};
   d.tableurs = Array.isArray(d.tableurs) ? d.tableurs : [];
+  d.tableurs.forEach((t) => { t.noms = t.noms || {}; t.feuilles.forEach(completerFeuille); });
   d.xp = +d.xp || 0;
   d.objectif = +d.objectif || 10;
   d.matieres.forEach((m) => { m.exam = m.exam || ''; });
