@@ -26,7 +26,7 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans
 .topbar { display: flex; align-items: center; gap: 14px; padding: 0 24px; height: 78px; border-bottom: 1px solid var(--line); }
 .crumb { font-size: 1.05rem; color: var(--muted); white-space: nowrap; }
 .crumb b { color: var(--ink); font-weight: 600; }
-.topbar input { margin-left: auto; max-width: 340px; }
+.topbar input { margin-left: auto; max-width: 300px; }
 .pill-top { display: flex; align-items: center; gap: 10px; padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-weight: 600; font-size: .85rem; white-space: nowrap; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
 .page { padding: 32px 34px 8px; flex: 1; }
@@ -110,7 +110,7 @@ td .bar { margin: 0; min-width: 90px; }
 .postit { position: relative; padding: 16px 16px 14px; min-height: 180px; color: #2b2b2b; border-radius: 2px 2px 14px 2px; box-shadow: 0 8px 16px rgba(0,0,0,.5); transform: rotate(var(--rot, 0deg)); transition: transform .15s, opacity .2s; }
 .postit:hover { transform: rotate(0) scale(1.03); z-index: 2; }
 .postit.done { opacity: .5; }
-.postit h3 { margin: 0 0 8px; font-size: 1.05rem; padding-right: 98px; }
+.postit h3 { margin: 0 0 8px; font-size: 1.05rem; padding-right: 120px; }
 .postit ul { margin: 0; padding-left: 18px; font-size: .95rem; }
 .postit li { margin-bottom: 5px; }
 .postit [contenteditable="true"] { outline: 2px dashed rgba(0,0,0,.4); outline-offset: 2px; background: rgba(255,255,255,.4); }
@@ -151,3 +151,67 @@ footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 22p
   .head h2, .sub { color: #000; }
   .postit { box-shadow: none; border: 1px solid #999; break-inside: avoid; transform: none; opacity: 1; }
 }
+
+/* ---- Nouveautés ---- */
+.switcher { display: block; }
+.lv { display: flex; justify-content: space-between; align-items: baseline; }
+.lv small { color: var(--muted); font-weight: 500; }
+.switcher .bar { margin-top: 10px; }
+.mini { width: 90px; font-size: 1.4rem; padding: 2px 8px; }
+.row2 { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.row2:last-child { border-bottom: none; }
+.row2 small { grid-column: 1 / -1; color: var(--muted); }
+.row2 b { color: var(--accent); }
+
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.badge { text-align: center; padding: 10px 6px; border: 1px solid var(--line); border-radius: 12px; opacity: .35; filter: grayscale(1); }
+.badge.on { opacity: 1; filter: none; border-color: rgba(240,178,122,.5); background: rgba(240,178,122,.08); }
+.badge span { font-size: 1.5rem; display: block; }
+.badge small { font-size: .68rem; color: var(--muted); line-height: 1.2; display: block; }
+
+.heat { display: grid; grid-template-rows: repeat(7, 14px); grid-auto-flow: column; grid-auto-columns: 14px; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
+.hm { border-radius: 3px; background: transparent; }
+.hm.l0 { background: #1b1b20; } .hm.l1 { background: #4a3724; } .hm.l2 { background: #8a6038; }
+.hm.l3 { background: #c98d52; } .hm.l4 { background: #f0b27a; }
+
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font: inherit; font-weight: 600; padding: 10px 14px; cursor: pointer; }
+.tab.on { color: var(--ink); border-color: var(--accent); }
+.chips { display: flex; gap: 8px; margin-bottom: 10px; }
+.chip { background: transparent; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: inherit; font-size: .82rem; padding: 5px 14px; cursor: pointer; }
+.chip.on { color: var(--ink); background: var(--hover); border-color: var(--accent); }
+
+.more { position: relative; }
+.more summary { list-style: none; cursor: pointer; }
+.more summary::-webkit-details-marker { display: none; }
+.more .menu { position: absolute; right: 0; top: 110%; z-index: 5; min-width: 230px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+.more .menu button { text-align: left; background: none; border: none; color: var(--ink); font: inherit; padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+.more .menu button:hover { background: var(--hover); }
+.more .menu .danger { color: var(--red); }
+.exam { display: inline-flex; gap: 8px; align-items: center; padding: 6px 12px; cursor: pointer; }
+.exam input { width: auto; padding: 4px 6px; }
+
+.gloss td:first-child { width: 30%; color: var(--accent); }
+.fiche h4 { margin: 18px 0 4px; color: var(--accent); }
+.fiche mark { background: rgba(240,178,122,.25); color: inherit; padding: 0 2px; border-radius: 3px; }
+.fiche ul { margin: 0; padding-left: 20px; }
+
+.focus-wrap { position: relative; }
+.focus-wrap .pill-top { cursor: pointer; color: var(--ink); font: inherit; font-weight: 600; font-size: .85rem; }
+.focus-panel { position: absolute; right: 0; top: 120%; z-index: 20; width: 260px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+.fc-time { font-size: 3rem; font-weight: 600; text-align: center; letter-spacing: -1px; }
+.focus-panel .actions { margin-top: 10px; }
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1d1d22; border: 1px solid var(--accent); border-radius: 12px; padding: 12px 20px; z-index: 30; max-width: 90vw; }
+
+.blank { display: inline-block; min-width: 70px; border-bottom: 2px solid #2b2b2b; text-align: center; }
+.carte .ok { color: #1b5e20; font-weight: 700; } .carte .ko { color: #b71c1c; font-weight: 700; }
+form.inline { display: flex; gap: 8px; width: 100%; }
+.choix { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.progress .hint { font-weight: 400; }
+.carte p { margin: 6px 0; }
+
+@media (max-width: 760px) {
+  .focus-wrap { order: 2; } .pill-top.saved { display: none; }
+  .topbar .crumb { width: 100%; }
+}
+@media print { .tabs, .chips, .tools, .more { display: none !important; } .fiche { border: none; color: #000; } .fiche h4 { color: #000; } }

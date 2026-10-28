@@ -8,10 +8,26 @@ const MATIERES_DEFAUT = [
   ['Anglais', '🇬🇧', '#fa5252'], ['SES', '📊', '#fab005'], ['NSI', '💻', '#868e96'],
 ];
 const uid = () => Math.random().toString(36).slice(2, 9);
+const JOUR = 86400000;
+const DELAIS = [0, 1, 2, 4, 8, 16]; // jours avant la prochaine révision, selon la boîte (répétition espacée)
+const debutJour = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
+function normaliserPostit(p) {
+  if (p.box === undefined) { p.box = p.ok ? 4 : 0; p.due = p.ok ? debutJour() + DELAIS[4] * JOUR : 0; }
+  p.ok = p.box >= 4;
+  p.due = p.due || 0;
+  p.star = !!p.star;
+  p.cles = p.cles || [];
+  return p;
+}
 function normaliser(d) {
   d.journal = Array.isArray(d.journal) ? d.journal : [];
   d.revisions = d.revisions && typeof d.revisions === 'object' ? d.revisions : {};
+  d.focus = d.focus && typeof d.focus === 'object' ? d.focus : {};
+  d.xp = +d.xp || 0;
+  d.objectif = +d.objectif || 10;
+  d.matieres.forEach((m) => { m.exam = m.exam || ''; });
+  d.cours.forEach((c) => c.postits.forEach(normaliserPostit));
   return d;
 }
 function chargerDb() {
@@ -30,7 +46,21 @@ function journaliser(titre, detail) {
   db.journal.length = Math.min(db.journal.length, 200);
 }
 
-const ui = { view: 'dash', mat: 'all', coursId: null, q: '' };
+/* Répétition espacée : une bonne réponse monte d'une boîte (revue de plus en plus tard), une erreur repart à zéro. */
+function noter(p, bon) {
+  p.box = bon ? Math.min(5, p.box + 1) : 0;
+  p.due = debutJour() + (bon ? DELAIS[p.box] : 1) * JOUR;
+  p.ok = p.box >= 4;
+}
+const estDu = (p) => !p.due || p.due <= Date.now();
+const niveau = (xp) => Math.floor(Math.sqrt(xp / 40)) + 1;
+function gagnerXp(n) {
+  const avant = niveau(db.xp);
+  db.xp += n;
+  if (niveau(db.xp) > avant) toast(`⭐ Niveau ${niveau(db.xp)} atteint !`);
+}
+
+const ui = { view: 'dash', mat: 'all', coursId: null, q: '', tab: 'postits', filtre: 'tous' };
 
 /* ================= Utilitaires ================= */
 const $ = (s) => document.querySelector(s);
@@ -130,7 +160,7 @@ function resumerSection(sec, tfGlobal, detail) {
     .sort((a, b) => b[1] - a[1]).slice(0, 4).map((e) => e[0]);
   let titre = sec.titre;
   if (!titre) titre = cles.slice(0, 2).map((w) => w[0].toUpperCase() + w.slice(1)).join(' · ') || 'Idées clés';
-  return { id: uid(), titre, points: choix.map((c) => raccourcir(c.t)), cles, ok: false };
+  return { id: uid(), titre, points: choix.map((c) => raccourcir(c.t)), cles, ok: false, box: 0, due: 0, star: false };
 }
 
 function decoupageRegulier(texte, nb) {
@@ -160,6 +190,54 @@ function resumer(texte, detail, nb) {
     secs = fusion;
   }
   return secs.map((s) => resumerSection(s, tf, detail)).filter((p) => p.points.length);
+}
+
+
+/* ================= Glossaire automatique ================= */
+function glossaire(texte) {
+  const res = [], vus = new Set();
+  const ajout = (terme, def) => {
+    terme = terme.replace(/^(?:le|la|les|l['’]|un|une|des|du|de la|d['’])\s*/i, '').trim();
+    def = def.trim();
+    if (!terme || terme.split(/\s+/).length > 4 || terme.length > 45 || def.length < 12) return;
+    const k = terme.toLowerCase();
+    if (vus.has(k)) return;
+    vus.add(k);
+    res.push({ terme: terme[0].toUpperCase() + terme.slice(1), def: raccourcir(def) });
+  };
+  decouper(texte).forEach((sec) => sec.items.forEach((it) => phrases(it).forEach((s) => {
+    let m = s.match(/^(.{3,45}?)\s+(?:désigne|désignent|signifie|signifient|se définit comme|correspond à|correspondent à|s['’]appelle|définit)\s+(.+)$/i)
+      || s.match(/^(.{3,45}?)\s+(?:est|sont)\s+((?:un|une|le|la|l['’]|les|des|du)\s*.+)$/i)
+      || s.match(/^([^:]{3,40}):\s+(.{12,})$/);
+    if (m) ajout(m[1], m[2].replace(/\.$/, ''));
+  })));
+  return res.slice(0, 30);
+}
+
+/* ================= Gamification ================= */
+const totalRevisions = () => Object.values(db.revisions).reduce((a, b) => a + b, 0);
+const aujourdhui = () => db.revisions[cleJour(new Date())] || 0;
+
+function badges() {
+  const maitr = tousPostits().filter((p) => p.ok).length;
+  const focus = Object.values(db.focus).reduce((a, b) => a + b, 0);
+  const s = serie();
+  return [
+    ['🌱', 'Premier cours', db.cours.length >= 1], ['🗂️', '5 cours', db.cours.length >= 5],
+    ['✅', '10 post-it maîtrisés', maitr >= 10], ['🏅', '50 post-it maîtrisés', maitr >= 50],
+    ['🔥', 'Série de 3 jours', s >= 3], ['🚀', 'Série de 7 jours', s >= 7],
+    ['💯', '100 révisions', totalRevisions() >= 100], ['⏱️', '1 h de focus', focus >= 60],
+    ['🎯', 'Objectif du jour atteint', aujourdhui() >= db.objectif],
+  ];
+}
+const badgesHtml = () => `<div class="badges">${badges().map(([ic, t, ok]) => `<div class="badge ${ok ? 'on' : ''}" title="${esc(t)}"><span>${ic}</span><small>${esc(t)}</small></div>`).join('')}</div>`;
+
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
 }
 
 /* ================= Rendu ================= */
@@ -208,89 +286,128 @@ function graphique(n) {
     <div class="axis"><span>${f(jours[0])}</span><span>Aujourd’hui</span></div></div>`;
 }
 
+function calendrier(semaines) {
+  const N = semaines * 7;
+  const debut = new Date(); debut.setDate(debut.getDate() - (N - 1));
+  const vide = (debut.getDay() + 6) % 7;
+  let cells = '<i class="hm"></i>'.repeat(vide);
+  for (let i = 0; i < N; i++) {
+    const d = new Date(debut); d.setDate(d.getDate() + i);
+    const v = db.revisions[cleJour(d)] || 0;
+    const l = v === 0 ? 0 : v < 3 ? 1 : v < 6 ? 2 : v < 10 ? 3 : 4;
+    cells += `<i class="hm l${l}" title="${d.toLocaleDateString('fr-FR')} : ${v} révision(s)"></i>`;
+  }
+  return `<div class="heat">${cells}</div>`;
+}
+
 function postitHtml(p, i, c, opts = {}) {
   const m = matiere(c.matiereId);
   const sup = opts.crumb ? `<div class="crumb-p">${esc(m?.emoji || '')} ${esc(c.titre)}</div>` : '';
   return `<article class="postit c${i % 6}${p.ok ? ' done' : ''}" style="--rot:${ROT[i % 6]}deg" data-c="${c.id}" data-p="${p.id}">
     <div class="tools">
+      <button data-act="star" title="Favori">${p.star ? '⭐' : '☆'}</button>
       <button data-act="ok" title="${p.ok ? 'Marquer à revoir' : 'Je sais ce post-it'}">${p.ok ? '✅' : '⬜'}</button>
       <button data-act="edit" title="Modifier">✏️</button>
       <button data-act="del" title="Supprimer">🗑️</button>
     </div>
     <h3>${esc(p.titre)}</h3>
     <ul>${p.points.map((t) => `<li>${surligner(t, p.cles)}</li>`).join('')}</ul>${sup}
+    <div class="crumb-p">Boîte ${p.box}/5${p.ok ? ' · maîtrisé' : estDu(p) ? ' · à revoir' : ' · revu, prochain ' + new Date(p.due).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</div>
   </article>`;
 }
 
 function renderSide() {
-  const nav = (v, ic, txt, on, extra = '') => `<button class="nav ${on ? 'on' : ''}" ${extra}><span class="ic">${ic}</span>${txt}</button>`;
+  const nav = (ic, txt, on, extra = '') => `<button class="nav ${on ? 'on' : ''}" ${extra}><span class="ic">${ic}</span>${txt}</button>`;
   const mats = db.matieres.map((m) => {
     const n = db.cours.filter((c) => c.matiereId === m.id).length;
     return `<button class="nav ${ui.view === 'mat' && ui.mat === m.id ? 'on' : ''}" data-mat="${m.id}"><span class="ic">${esc(m.emoji)}</span>${esc(m.nom)}<small>${n || ''}</small></button>`;
   }).join('');
+  const nv = niveau(db.xp), a = 40 * (nv - 1) ** 2, b = 40 * nv ** 2;
   $('#side').innerHTML = `
     <div class="logo">PostIt<span>Bac</span></div>
-    <div class="switcher"><span>🎓 Mon espace de révision</span></div>
+    <div class="switcher"><div class="lv"><span>🎓 Niveau ${nv}</span><small>${db.xp} XP</small></div>
+      <div class="bar"><i style="width:${Math.round(100 * (db.xp - a) / (b - a))}%"></i></div></div>
     <div class="sec">Général</div>
-    ${nav('dash', '⌂', 'Dashboard', ui.view === 'dash', 'data-nav="dash"')}
-    ${nav('journal', '☰', 'Journal d’activités', ui.view === 'journal', 'data-nav="journal"')}
-    ${nav('stats', '⟋', 'Statistiques', ui.view === 'stats', 'data-nav="stats"')}
+    ${nav('⌂', 'Dashboard', ui.view === 'dash', 'data-nav="dash"')}
+    ${nav('☰', 'Journal d’activités', ui.view === 'journal', 'data-nav="journal"')}
+    ${nav('⟋', 'Statistiques', ui.view === 'stats', 'data-nav="stats"')}
     <div class="sec">Cours</div>
-    ${nav('new', '＋', 'Nouveau cours', ui.view === 'new', 'data-nav="new"')}
-    ${nav('all', '▦', 'Tous mes cours', ui.view === 'mat' && ui.mat === 'all', 'data-mat="all"')}
-    ${nav('rev', '🧠', 'Réviser', false, 'data-nav="rev"')}
+    ${nav('＋', 'Nouveau cours', ui.view === 'new', 'data-nav="new"')}
+    ${nav('▦', 'Tous mes cours', ui.view === 'mat' && ui.mat === 'all', 'data-mat="all"')}
+    ${nav('🧠', 'Réviser aujourd’hui', false, 'data-nav="rev"')}
     <div class="sec">Matières</div>
     ${mats}
-    ${nav('addmat', '＋', 'Nouvelle matière', false, 'data-nav="addmat"')}
+    ${nav('＋', 'Nouvelle matière', false, 'data-nav="addmat"')}
     <div class="sec">Données</div>
-    ${nav('export', '⬇', 'Sauvegarder', false, 'data-nav="export"')}
-    ${nav('import', '⬆', 'Restaurer', false, 'data-nav="import"')}`;
+    ${nav('⬇', 'Sauvegarder', false, 'data-nav="export"')}
+    ${nav('⬆', 'Restaurer', false, 'data-nav="import"')}`;
 }
 
 function coursCard(c) {
   const m = matiere(c.matiereId);
+  const du = c.postits.filter(estDu).length;
   return `<div class="cours" data-open="${c.id}" style="--mc:${m ? m.couleur : '#888'}">
     <h3>${esc(c.titre)}</h3>
     <small>${esc(m ? m.emoji + ' ' + m.nom : 'Sans matière')} · ${c.postits.length} post-it · ${fmtDate(c.date)}</small>
     <div class="bar"><i style="width:${progression(c)}%"></i></div>
-    <small>${progression(c)} % maîtrisé</small>
+    <small>${progression(c)} % maîtrisé · ${du} à revoir aujourd’hui</small>
   </div>`;
 }
 
 const logHtml = (liste) => `<ul class="log">${liste.map((j) => `<li><b>${esc(j.titre)}</b><small>${depuis(j.t)}${j.detail ? ' · ' + esc(j.detail) : ''}</small></li>`).join('')}</ul>`;
 const entete = (titre, sous, pill) => `<div class="head"><div><h2>${titre}</h2><p class="sub">${sous}</p></div>${pill || ''}</div>`;
 
+function compteARebours() {
+  const auj = debutJour();
+  const l = db.matieres.filter((m) => m.exam && new Date(m.exam + 'T00:00').getTime() >= auj)
+    .map((m) => ({ m, j: Math.round((new Date(m.exam + 'T00:00').getTime() - auj) / JOUR) }))
+    .sort((a, b) => a.j - b.j);
+  if (!l.length) return '<p class="muted" style="margin:0">Ajoute la date de ton épreuve dans une matière (📅 Examen) pour voir ton compte à rebours et ton rythme conseillé.</p>';
+  return l.map(({ m, j }) => {
+    const reste = db.cours.filter((c) => c.matiereId === m.id).flatMap((c) => c.postits).filter((p) => !p.ok).length;
+    const rythme = reste ? Math.ceil(reste / Math.max(1, j)) : 0;
+    return `<div class="row2"><span>${esc(m.emoji + ' ' + m.nom)}</span><b>${j === 0 ? 'Aujourd’hui !' : 'J-' + j}</b><small>${reste} à maîtriser${rythme ? ' · ≈ ' + rythme + '/jour' : ''}</small></div>`;
+  }).join('');
+}
+
 function vueDash() {
   const ps = tousPostits();
-  const aRevoir = ps.filter((p) => !p.ok).length;
-  const ok = ps.length - aRevoir;
+  const du = ps.filter(estDu).length;
+  const ok = ps.filter((p) => p.ok).length;
   const pct = ps.length ? Math.round(100 * ok / ps.length) : 0;
   const s = serie();
-  const aujourdhui = db.revisions[cleJour(new Date())] || 0;
-  return entete('Tableau de bord', 'Gestion de ton espace de révision', `<span class="pill ${aRevoir ? 'warn' : ''}">${aRevoir ? 'À réviser' : 'À jour'}</span>`) + `
+  const auj = aujourdhui();
+  const butoir = Math.min(100, Math.round(100 * auj / db.objectif));
+  return entete('Tableau de bord', 'Gestion de ton espace de révision', `<span class="pill ${du ? 'warn' : ''}">${du ? 'À réviser' : 'À jour'}</span>`) + `
   <div class="tiles">
-    <div class="tile"><span>Cours</span><b>${db.cours.length}</b><small>${db.matieres.filter((m) => db.cours.some((c) => c.matiereId === m.id)).length} matière(s) utilisée(s)</small></div>
-    <div class="tile"><span>Post-it</span><b>${ps.length}</b><small>${aRevoir} à revoir</small></div>
+    <div class="tile"><span>À réviser aujourd’hui</span><b>${du}</b><small>${db.cours.length} cours · ${ps.length} post-it</small></div>
     <div class="tile"><span>Maîtrisés</span><b>${pct} %</b><small>${ok} post-it sus</small></div>
-    <div class="tile"><span>Série de révision</span><b>${s} jour${s > 1 ? 's' : ''}</b><small>${aujourdhui} post-it révisés aujourd’hui</small></div>
+    <div class="tile"><span>Objectif du jour</span><b>${auj} / ${db.objectif}</b><div class="bar"><i style="width:${butoir}%"></i></div></div>
+    <div class="tile"><span>Série de révision</span><b>${s} jour${s > 1 ? 's' : ''}</b><small>${totalRevisions()} révisions au total</small></div>
   </div>
   <div class="cols">
     <div class="col">
-      <div class="card"><h3>État de tes révisions</h3>
-        <div class="status"><strong><i class="dot"></i>${aRevoir ? aRevoir + ' post-it à revoir' : ps.length ? 'Tout est maîtrisé 🎉' : 'Aucun cours pour l’instant'}</strong>
-          <button class="btn" data-nav="rev">Lancer une révision</button></div>
-        <div class="actions"><button class="btn primary" data-nav="new">＋ Nouveau cours</button></div>
-        <p class="muted">${db.cours.length ? 'Dernier cours : ' + esc([...db.cours].sort((a, b) => b.date - a.date)[0].titre) : 'Colle ton premier cours pour commencer.'}</p></div>
+      <div class="card"><h3>Réviser maintenant</h3>
+        <div class="status"><strong><i class="dot"></i>${du ? du + ' post-it à revoir aujourd’hui' : ps.length ? 'Rien d’urgent, bravo 🎉' : 'Aucun cours pour l’instant'}</strong></div>
+        <div class="actions">
+          <button class="btn primary" data-nav="rev">🧠 Cartes</button>
+          <button class="btn" data-nav="revTrous">✍️ Texte à trous</button>
+          <button class="btn" data-nav="revQcm">🎯 QCM</button>
+          <button class="btn ghost" data-nav="new">＋ Nouveau cours</button>
+        </div>
+        <p class="muted">Les post-it reviennent au bon moment grâce à la répétition espacée : plus tu réussis, plus l’intervalle s’allonge.</p></div>
       <div class="card"><h3>Post-it révisés (14 jours)</h3>${graphique(14)}</div>
+      <div class="card"><h3>Compte à rebours</h3>${compteARebours()}</div>
+    </div>
+    <div class="col">
+      <div class="card"><div class="card-head"><h3>Journal d’activités</h3><a data-nav="journal">Voir tout →</a></div>
+        ${db.journal.length ? logHtml(db.journal.slice(0, 7)) : '<p class="muted" style="margin:0">Rien pour l’instant. Tes actions apparaîtront ici.</p>'}</div>
+      <div class="card"><h3>Badges</h3>${badgesHtml()}</div>
       <div class="card"><h3>Actions rapides</h3>
-        <button class="row" data-nav="new"><span><b>Ajouter un cours</b><small>Colle ton cours, reçois des post-it</small></span>→</button>
-        <button class="row" data-nav="rev"><span><b>Réviser tout</b><small>Les post-it que tu ne sais pas encore</small></span>→</button>
+        <button class="row" data-nav="new"><span><b>Ajouter un cours</b><small>Colle ou importe un fichier .txt</small></span>→</button>
+        <button class="row" data-nav="stats"><span><b>Voir mes statistiques</b><small>Calendrier, progression, objectif</small></span>→</button>
         <button class="row" data-nav="export"><span><b>Sauvegarder mes cours</b><small>Télécharger une copie de tout</small></span>→</button></div>
     </div>
-    <div class="col"><div class="card">
-      <div class="card-head"><h3>Journal d’activités</h3><a data-nav="journal">Voir tout →</a></div>
-      ${db.journal.length ? logHtml(db.journal.slice(0, 8)) : '<p class="muted">Rien pour l’instant. Tes actions apparaîtront ici.</p>'}
-    </div></div>
   </div>`;
 }
 
@@ -304,14 +421,24 @@ function vueStats() {
     const cs = db.cours.filter((c) => c.matiereId === m.id);
     const ps = cs.flatMap((c) => c.postits);
     const pct = ps.length ? Math.round(100 * ps.filter((p) => p.ok).length / ps.length) : 0;
-    return `<tr><td>${esc(m.emoji + ' ' + m.nom)}</td><td>${cs.length}</td><td>${ps.length}</td>
+    return `<tr><td>${esc(m.emoji + ' ' + m.nom)}</td><td>${cs.length}</td><td>${ps.length}</td><td>${ps.filter(estDu).length}</td>
       <td><div class="bar"><i style="width:${pct}%"></i></div></td><td>${pct} %</td></tr>`;
   }).join('');
-  const total = Object.values(db.revisions).reduce((a, b) => a + b, 0);
-  return entete('Statistiques', `${total} post-it révisés au total · série actuelle : ${serie()} jour(s)`) + `
-    <div class="card"><h3>Post-it révisés (30 jours)</h3>${graphique(30)}</div>
+  const minutes = Object.values(db.focus).reduce((a, b) => a + b, 0);
+  return entete('Statistiques', `${totalRevisions()} révisions · série actuelle : ${serie()} jour(s) · ${minutes} min de focus`) + `
+    <div class="tiles">
+      <div class="tile"><span>Niveau</span><b>${niveau(db.xp)}</b><small>${db.xp} XP</small></div>
+      <div class="tile"><span>Révisions</span><b>${totalRevisions()}</b><small>au total</small></div>
+      <div class="tile"><span>Focus</span><b>${minutes} min</b><small>${db.focus[cleJour(new Date())] || 0} min aujourd’hui</small></div>
+      <div class="tile"><span>Objectif quotidien</span><b><input id="fObjectif" class="mini" type="number" min="1" max="200" value="${db.objectif}"></b><small>post-it par jour</small></div>
+    </div>
+    <div class="cols">
+      <div class="card"><h3>Post-it révisés (30 jours)</h3>${graphique(30)}</div>
+      <div class="card"><h3>Calendrier d’activité (15 semaines)</h3>${calendrier(15)}</div>
+    </div>
     <div class="card" style="margin-top:16px"><h3>Progression par matière</h3>
-      <table><tr><th>Matière</th><th>Cours</th><th>Post-it</th><th>Progression</th><th></th></tr>${lignes}</table></div>`;
+      <table><tr><th>Matière</th><th>Cours</th><th>Post-it</th><th>À revoir</th><th>Progression</th><th></th></tr>${lignes}</table></div>
+    <div class="card" style="margin-top:16px"><h3>Badges</h3>${badgesHtml()}</div>`;
 }
 
 function vueMat() {
@@ -321,7 +448,8 @@ function vueMat() {
     <p class="sub">${liste.length ? liste.length + ' cours · clique pour voir les post-it' : ''}</p></div>
     <div class="actions"><button class="btn primary" data-nav="new">＋ Nouveau cours</button>
     ${liste.length ? '<button class="btn" data-act="revMat">🧠 Réviser</button>' : ''}
-    ${m ? '<button class="btn ghost" data-act="renMat">✏️ Renommer</button><button class="btn ghost danger" data-act="delMat">🗑️ Supprimer</button>' : ''}</div></div>`;
+    ${m ? `<label class="btn ghost exam">📅 Examen <input type="date" data-exam value="${esc(m.exam)}"></label>
+    <button class="btn ghost" data-act="renMat">✏️</button><button class="btn ghost danger" data-act="delMat">🗑️</button>` : ''}</div></div>`;
   if (!liste.length) {
     return html + `<div class="empty"><p style="font-size:3rem;margin:0">🗒️</p><p>Aucun cours ${m ? 'en ' + esc(m.nom) : ''} pour l’instant.</p></div>`;
   }
@@ -355,7 +483,7 @@ function vueNouveau() {
       <div><label class="field" for="fTitre" style="margin-top:0">Titre du cours <span class="hint">(facultatif)</span></label>
         <input id="fTitre" type="text" placeholder="Ex : La Guerre froide"></div>
     </div>
-    <label class="field" for="fTexte">Ton cours</label>
+    <label class="field" for="fTexte">Ton cours <span class="hint">— colle-le, ou glisse un fichier .txt / .md dessus</span></label>
     <textarea id="fTexte" rows="13" placeholder="Copie-colle ton cours entier ici…&#10;&#10;Astuce : si tes titres sont sur leur propre ligne (I. Les causes, 1) …, MAJUSCULES), chaque titre devient un post-it."></textarea>
     <div class="grid2">
       <div><label class="field" for="fDetail">Détail des post-it</label>
@@ -365,29 +493,55 @@ function vueNouveau() {
     </div>
     <div class="actions">
       <button class="btn primary" data-act="generer">✨ Générer mes post-it</button>
-      <button class="btn" data-act="exemple">Essayer avec un exemple</button>
+      <label class="btn">📄 Importer un fichier<input id="fFichier" type="file" accept=".txt,.md,.text" hidden></label>
+      <button class="btn ghost" data-act="exemple">Essayer avec un exemple</button>
     </div>
     <p class="count" id="fCompte"></p>
   </div>`;
+}
+
+function ongletGlossaire(c) {
+  const g = c.glossaire;
+  if (!g) return '<div class="empty">Glossaire indisponible pour ce cours (ajouté avec une ancienne version).<br>Utilise « Régénérer » dans le menu ⋯ pour le créer.</div>';
+  if (!g.length) return '<div class="empty">Aucune définition détectée dans ce cours.<br>Les phrases du type « X désigne… », « X est un… » ou « Terme : définition » en produisent.</div>';
+  return `<div class="card"><table class="gloss">${g.map((e) => `<tr><td><b>${esc(e.terme)}</b></td><td>${esc(e.def)}</td></tr>`).join('')}</table></div>`;
+}
+function ongletFiche(c) {
+  return `<div class="card fiche"><h3>${esc(c.titre)}</h3>${c.postits.map((p) =>
+    `<h4>${esc(p.titre)}</h4><ul>${p.points.map((t) => `<li>${surligner(t, p.cles)}</li>`).join('')}</ul>`).join('')}</div>`;
 }
 
 function vueCours() {
   const c = cours(ui.coursId);
   if (!c) { ui.view = 'dash'; return vueDash(); }
   const m = matiere(c.matiereId);
+  const liste = c.postits.filter((p) => ui.filtre === 'revoir' ? !p.ok : ui.filtre === 'fav' ? p.star : true);
+  const onglet = (id, txt) => `<button class="tab ${ui.tab === id ? 'on' : ''}" data-tab="${id}">${txt}</button>`;
+  const puce = (id, txt) => `<button class="chip ${ui.filtre === id ? 'on' : ''}" data-filtre="${id}">${txt}</button>`;
+  let corps;
+  if (ui.tab === 'glossaire') corps = ongletGlossaire(c);
+  else if (ui.tab === 'fiche') corps = ongletFiche(c);
+  else corps = `<div class="chips">${puce('tous', 'Tous')}${puce('revoir', 'À revoir')}${puce('fav', '⭐ Favoris')}</div>
+    <div class="mur">${liste.map((p) => postitHtml(p, c.postits.indexOf(p), c)).join('') || '<div class="empty">Aucun post-it dans ce filtre.</div>'}</div>`;
   return `<div class="head"><div>
       <p class="sub" style="margin:0 0 4px"><a href="#" data-act="retour">← ${esc(m ? m.nom : 'Retour')}</a></p>
       <h2>${esc(c.titre)}</h2>
       <p class="sub">${esc(m ? m.emoji + ' ' + m.nom : '')} · ${c.postits.length} post-it · ${progression(c)} % maîtrisé</p></div>
     <div class="actions">
-      <button class="btn primary" data-act="revision">🧠 Réviser</button>
-      <button class="btn" data-act="copier">📋 Copier</button>
-      <button class="btn" data-act="imprimer">🖨️ Imprimer / PDF</button>
-      <button class="btn" data-act="ajoutPostit">＋ Post-it</button>
-      <button class="btn ghost" data-act="renCours">✏️ Renommer</button>
-      <button class="btn ghost danger" data-act="delCours">🗑️ Supprimer</button>
+      <button class="btn primary" data-act="revision">🧠 Cartes</button>
+      <button class="btn" data-act="revTrous">✍️ Trous</button>
+      <button class="btn" data-act="revQcm">🎯 QCM</button>
+      <details class="more"><summary class="btn">⋯</summary><div class="menu">
+        <button data-act="ajoutPostit">＋ Ajouter un post-it</button>
+        <button data-act="copier">📋 Copier le résumé</button>
+        <button data-act="imprimer">🖨️ Imprimer / PDF</button>
+        <button data-act="anki">⬇ Exporter pour Anki</button>
+        <button data-act="regen">🔄 Régénérer le résumé</button>
+        <button data-act="renCours">✏️ Renommer</button>
+        <button data-act="delCours" class="danger">🗑️ Supprimer</button></div></details>
     </div></div>
-    <div class="mur">${c.postits.map((p, i) => postitHtml(p, i, c)).join('')}</div>`;
+    <div class="tabs">${onglet('postits', '🗒️ Post-it')}${onglet('glossaire', '📖 Glossaire')}${onglet('fiche', '📄 Fiche')}</div>
+    ${corps}`;
 }
 
 function fil() {
@@ -444,22 +598,46 @@ Mikhaïl Gorbatchev arrive au pouvoir en 1985 et lance la perestroïka et la gla
 function genererDepuisForm() {
   const texte = $('#fTexte').value.trim();
   if (texte.split(/\s+/).length < 20) { alert('Colle un cours un peu plus long (au moins quelques phrases) 🙂'); return; }
-  const postits = resumer(texte, +$('#fDetail').value, Math.max(2, Math.min(30, +$('#fNb').value || 8)));
+  const detail = +$('#fDetail').value, nb = Math.max(2, Math.min(30, +$('#fNb').value || 8));
+  const postits = resumer(texte, detail, nb);
   if (!postits.length) { alert('Je n’ai rien trouvé à résumer. Vérifie que tu as bien collé du texte.'); return; }
   const c = {
-    id: uid(), matiereId: $('#fMat').value, date: Date.now(), postits,
+    id: uid(), matiereId: $('#fMat').value, date: Date.now(), postits, texte, detail, nb, glossaire: glossaire(texte),
     titre: $('#fTitre').value.trim() || (decouper(texte)[0]?.titre || 'Cours du ' + fmtDate(Date.now())),
   };
   db.cours.push(c);
+  gagnerXp(25);
   journaliser('Cours ajouté : ' + c.titre, `${postits.length} post-it · ${matiere(c.matiereId)?.nom || ''}`);
   sauver();
-  aller('cours', { mat: c.matiereId, coursId: c.id });
+  aller('cours', { mat: c.matiereId, coursId: c.id, tab: 'postits', filtre: 'tous' });
 }
 
-
-function texteCours(c) {
-  return c.titre + '\n\n' + c.postits.map((p) => '■ ' + p.titre + '\n' + p.points.map((t) => '  • ' + t).join('\n')).join('\n\n');
+function regenerer(c) {
+  if (!c.texte) { alert('Le texte original n’a pas été conservé pour ce cours (ajouté avec une ancienne version).'); return; }
+  const d = +(prompt('Niveau de détail : 1 = court, 2 = moyen, 3 = détaillé', c.detail || 2) || 0);
+  if (![1, 2, 3].includes(d)) return;
+  const anciens = new Map(c.postits.map((p) => [p.titre, p]));
+  c.postits = resumer(c.texte, d, c.nb || 8).map((p) => { const o = anciens.get(p.titre); return o ? Object.assign(p, { box: o.box, due: o.due, ok: o.ok, star: o.star }) : p; });
+  c.detail = d; c.glossaire = glossaire(c.texte);
+  journaliser('Résumé régénéré : ' + c.titre);
+  sauver(); render();
 }
+
+const texteCours = (c) => c.titre + '\n\n' + c.postits.map((p) => '■ ' + p.titre + '\n' + p.points.map((t) => '  • ' + t).join('\n')).join('\n\n');
+
+function exporterAnki(c) {
+  const ligne = (p) => [p.titre, p.points.join(' | ')].map((s) => s.replace(/[\t\n\r]+/g, ' ')).join('\t');
+  telecharger(c.postits.map(ligne).join('\n'), (c.titre.replace(/[^\p{L}\p{N}]+/gu, '_') || 'cours') + '-anki.txt', 'text/plain');
+  toast('Fichier Anki téléchargé : importe-le dans Anki (séparateur : tabulation).');
+}
+function telecharger(contenu, nom, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([contenu], { type }));
+  a.download = nom;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+const sauvegarder = () => telecharger(JSON.stringify(db), 'postitbac-sauvegarde.json', 'application/json');
 
 function basculerEdition(art) {
   const c = cours(art.dataset.c);
@@ -483,28 +661,30 @@ function ajouterMatiere() {
   if (!nom) return;
   const emoji = (prompt('Un emoji pour la reconnaître ? (facultatif)', '📘') || '📘').trim() || '📘';
   const couleurs = ['#4c6ef5', '#15aabf', '#40c057', '#fd7e14', '#e64980', '#7950f2', '#fa5252', '#fab005'];
-  const m = { id: uid(), nom, emoji, couleur: couleurs[db.matieres.length % couleurs.length] };
+  const m = { id: uid(), nom, emoji, couleur: couleurs[db.matieres.length % couleurs.length], exam: '' };
   db.matieres.push(m);
   journaliser('Matière ajoutée : ' + nom);
   sauver();
   aller('mat', { mat: m.id });
 }
 
-function sauvegarder() {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(db)], { type: 'application/json' }));
-  a.download = 'postitbac-sauvegarde.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
+function lireFichier(f) {
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { $('#fTexte').value = String(r.result); if (!$('#fTitre').value) $('#fTitre').value = f.name.replace(/\.\w+$/, ''); majCompte(); };
+  r.readAsText(f);
 }
 
 document.addEventListener('click', (e) => {
+  if (!e.target.closest('.more summary')) document.querySelectorAll('.more[open]').forEach((d) => d.removeAttribute('open'));
   const mat = e.target.closest('[data-mat]');
   if (mat) { aller('mat', { mat: mat.dataset.mat }); return; }
 
   const nav = e.target.closest('[data-nav]')?.dataset.nav;
   if (nav) {
-    if (nav === 'rev') demarrerRevision(db.cours);
+    if (nav === 'rev') demarrerRevision(db.cours, 'cartes', true);
+    else if (nav === 'revTrous') demarrerRevision(db.cours, 'trous', true);
+    else if (nav === 'revQcm') demarrerRevision(db.cours, 'qcm', true);
     else if (nav === 'addmat') ajouterMatiere();
     else if (nav === 'export') sauvegarder();
     else if (nav === 'import') $('#import').click();
@@ -512,20 +692,28 @@ document.addEventListener('click', (e) => {
     return;
   }
 
+  const tab = e.target.closest('[data-tab]')?.dataset.tab;
+  if (tab) { ui.tab = tab; render(); return; }
+  const filtre = e.target.closest('[data-filtre]')?.dataset.filtre;
+  if (filtre) { ui.filtre = filtre; render(); return; }
+
   const art = e.target.closest('.postit');
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (art && act) {
     const c = cours(art.dataset.c);
     const p = c?.postits.find((x) => x.id === art.dataset.p);
     if (!p) return;
-    if (act === 'ok') { p.ok = !p.ok; if (p.ok) journaliser('Post-it maîtrisé : ' + p.titre, c.titre); sauver(); render(); }
+    if (act === 'ok') {
+      if (p.ok) { p.box = 0; p.due = 0; p.ok = false; } else { p.box = 4; p.due = debutJour() + DELAIS[4] * JOUR; p.ok = true; journaliser('Post-it maîtrisé : ' + p.titre, c.titre); }
+      sauver(); render();
+    } else if (act === 'star') { p.star = !p.star; sauver(); render(); }
     else if (act === 'edit') basculerEdition(art);
     else if (act === 'del' && confirm('Supprimer ce post-it ?')) { c.postits = c.postits.filter((x) => x !== p); sauver(); render(); }
     return;
   }
 
   const ouvrir = e.target.closest('[data-open]');
-  if (ouvrir) { aller('cours', { coursId: ouvrir.dataset.open }); return; }
+  if (ouvrir) { aller('cours', { coursId: ouvrir.dataset.open, tab: 'postits', filtre: 'tous' }); return; }
 
   const c = cours(ui.coursId);
   switch (act) {
@@ -533,14 +721,18 @@ document.addEventListener('click', (e) => {
     case 'generer': genererDepuisForm(); break;
     case 'exemple': $('#fTexte').value = EXEMPLE; $('#fTitre').value = 'La Guerre froide'; majCompte();
       { const h = db.matieres.find((m) => m.nom === 'Histoire-Géo'); if (h) $('#fMat').value = h.id; } break;
-    case 'revision': demarrerRevision([c]); break;
-    case 'revMat': demarrerRevision(db.cours.filter((x) => ui.mat === 'all' || x.matiereId === ui.mat)); break;
-    case 'copier': navigator.clipboard?.writeText(texteCours(c)).then(() => alert('Copié ! Tu peux le coller où tu veux.'), () => alert('Copie impossible sur ce navigateur.')); break;
+    case 'revision': demarrerRevision([c], 'cartes', false); break;
+    case 'revTrous': demarrerRevision(c ? [c] : db.cours, 'trous', !c); break;
+    case 'revQcm': demarrerRevision(c ? [c] : db.cours, 'qcm', !c); break;
+    case 'revMat': demarrerRevision(db.cours.filter((x) => ui.mat === 'all' || x.matiereId === ui.mat), 'cartes', true); break;
+    case 'copier': navigator.clipboard?.writeText(texteCours(c)).then(() => toast('Résumé copié !'), () => alert('Copie impossible sur ce navigateur.')); break;
     case 'imprimer': window.print(); break;
+    case 'anki': exporterAnki(c); break;
+    case 'regen': regenerer(c); break;
     case 'ajoutPostit': {
       const titre = (prompt('Titre du post-it ?') || '').trim(); if (!titre) break;
       const pt = (prompt('Ce que tu veux retenir ?') || '').trim(); if (!pt) break;
-      c.postits.push({ id: uid(), titre, points: [pt], cles: [], ok: false }); sauver(); render(); break; }
+      c.postits.push({ id: uid(), titre, points: [pt], cles: [], ok: false, box: 0, due: 0, star: false }); sauver(); render(); break; }
     case 'renCours': { const t = (prompt('Nouveau titre ?', c.titre) || '').trim(); if (t) { c.titre = t; sauver(); render(); } break; }
     case 'delCours': if (confirm('Supprimer ce cours et tous ses post-it ?')) {
       db.cours = db.cours.filter((x) => x !== c); journaliser('Cours supprimé : ' + c.titre); sauver(); aller('mat', { mat: c.matiereId }); } break;
@@ -554,41 +746,132 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('input', (e) => { if (e.target.id === 'fTexte') majCompte(); });
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'fFichier') lireFichier(e.target.files[0]);
+  if (e.target.matches('[data-exam]')) { const m = matiere(ui.mat); if (m) { m.exam = e.target.value; journaliser('Date d’examen : ' + m.nom, m.exam ? new Date(m.exam).toLocaleDateString('fr-FR') : 'supprimée'); sauver(); render(); } }
+  if (e.target.id === 'fObjectif') { db.objectif = Math.max(1, Math.min(200, +e.target.value || 10)); sauver(); toast('Objectif mis à jour : ' + db.objectif + ' post-it par jour'); }
+});
+document.addEventListener('dragover', (e) => { if (e.target.id === 'fTexte') e.preventDefault(); });
+document.addEventListener('drop', (e) => { if (e.target.id === 'fTexte') { e.preventDefault(); lireFichier(e.dataTransfer.files[0]); } });
 $('#search').addEventListener('input', (e) => { ui.q = e.target.value; render(); });
 
-/* ================= Mode révision ================= */
-const rv = { items: [], i: 0, vu: false };
+/* ================= Mode révision (cartes, texte à trous, QCM) ================= */
+const rv = { items: [], i: 0, vu: false, mode: 'cartes', bons: 0, xp: 0, q: null, repondu: false };
 const rvPostit = (it) => { const c = cours(it.c); return { c, p: c.postits.find((x) => x.id === it.p) }; };
+const melanger = (a) => a.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function lev(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
 
-function demarrerRevision(liste) {
-  let items = liste.flatMap((c) => c.postits.filter((p) => !p.ok).map((p) => ({ c: c.id, p: p.id })));
-  if (!items.length) items = liste.flatMap((c) => c.postits.map((p) => ({ c: c.id, p: p.id })));
+function questionTrous(p, avecChoix) {
+  for (const pt of p.points) {
+    let m = null;
+    for (const k of p.cles) {
+      m = pt.match(new RegExp('(^|[^\\p{L}])(' + reEsc(k) + ')(?=$|[^\\p{L}])', 'iu'));
+      if (m) { m = { i: m.index + m[1].length, rep: m[2], an: false }; break; }
+    }
+    if (!m) { const y = pt.match(ANNEE); if (y) m = { i: y.index, rep: y[1], an: true }; }
+    if (!m) continue;
+    const q = { avant: pt.slice(0, m.i), apres: pt.slice(m.i + m.rep.length), rep: m.rep, an: m.an };
+    if (avecChoix) {
+      let pool;
+      if (m.an) pool = [-10, -5, -2, -1, 1, 2, 5, 10].map((d) => String(+m.rep + d));
+      else pool = [...new Set(tousPostits().flatMap((x) => x.cles))].filter((w) => norm(w) !== norm(m.rep));
+      if (pool.length < 3) return null;
+      q.choix = melanger([m.rep, ...melanger(pool).slice(0, 3)]);
+    }
+    return q;
+  }
+  return null;
+}
+
+function demarrerRevision(liste, mode, seulementDus) {
+  let items = liste.flatMap((c) => c.postits.filter((p) => !seulementDus || estDu(p)).map((p) => ({ c: c.id, p: p.id })));
+  if (!items.length && seulementDus && liste.flatMap((c) => c.postits).length) {
+    if (!confirm('Rien d’urgent aujourd’hui 🎉 Réviser quand même tous les post-it ?')) return;
+    items = liste.flatMap((c) => c.postits.map((p) => ({ c: c.id, p: p.id })));
+  }
   if (!items.length) { alert('Aucun post-it à réviser pour l’instant : ajoute d’abord un cours 🙂'); return; }
-  if (liste.length > 1) items.sort(() => Math.random() - 0.5);
-  Object.assign(rv, { items, i: 0, vu: false });
+  Object.assign(rv, { items: melanger(items), i: 0, vu: false, mode, bons: 0, xp: 0, repondu: false });
   $('#modal').hidden = false;
   rvRender();
 }
 
+function rvFin() {
+  const n = rv.items.length;
+  journaliser('Révision terminée', `${rv.bons}/${n} réussis · ${rv.mode}`);
+  sauver();
+  $('#rProgress').textContent = 'Terminé 🎉';
+  $('#rCarte').className = 'carte c2';
+  $('#rCarte').innerHTML = `<h3>Bravo !</h3><p>${rv.bons} bonne(s) réponse(s) sur ${n}.<br>+${rv.xp} XP gagnés.</p><p>${rv.bons === n ? 'Sans faute ! 🔥' : 'Les post-it ratés reviendront demain.'}</p>`;
+  $('#rActions').innerHTML = '<button class="btn primary" data-rv="fin">Fermer</button>';
+}
+
 function rvRender() {
-  if (rv.i >= rv.items.length) {
-    journaliser('Révision terminée', rv.items.length + ' post-it');
-    sauver();
-    $('#rProgress').textContent = 'Terminé 🎉';
-    $('#rCarte').className = 'carte c2';
-    $('#rCarte').innerHTML = `<h3>Bravo !</h3><p>Tu as fait le tour de ${rv.items.length} post-it.</p>`;
-    $('#rActions').innerHTML = '<button class="btn primary" data-rv="fin">Fermer</button>';
+  if (rv.i >= rv.items.length) { rvFin(); return; }
+  const { c, p } = rvPostit(rv.items[rv.i]);
+  rv.q = rv.mode === 'cartes' ? null : questionTrous(p, rv.mode === 'qcm');
+  const mode = rv.q ? rv.mode : 'cartes';
+  $('#rProgress').innerHTML = `Post-it ${rv.i + 1} / ${rv.items.length} — « ${esc(c.titre)} » <span class="hint">(${mode === 'cartes' ? 'cartes' : mode === 'trous' ? 'texte à trous' : 'QCM'})</span>`;
+  $('#rCarte').className = 'carte c' + (rv.i % 6);
+  rv.repondu = false;
+  if (mode === 'cartes') {
+    $('#rCarte').innerHTML = `<h3>${esc(p.titre)}</h3>` + (rv.vu
+      ? `<ul>${p.points.map((t) => `<li>${surligner(t, p.cles)}</li>`).join('')}</ul>`
+      : '<p class="cache">Essaie de te rappeler ce que tu sais sur ce titre, puis retourne le post-it… <small>(Espace)</small></p>');
+    $('#rActions').innerHTML = rv.vu
+      ? '<button class="btn" data-rv="non">🔁 À revoir <small>(2)</small></button><button class="btn primary" data-rv="oui">✅ Je sais <small>(1)</small></button>'
+      : '<button class="btn primary" data-rv="voir">👀 Voir la réponse</button>';
     return;
   }
-  const { c, p } = rvPostit(rv.items[rv.i]);
-  $('#rProgress').textContent = `Post-it ${rv.i + 1} / ${rv.items.length} — « ${c.titre} »`;
-  $('#rCarte').className = 'carte c' + (rv.i % 6);
-  $('#rCarte').innerHTML = `<h3>${esc(p.titre)}</h3>` + (rv.vu
-    ? `<ul>${p.points.map((t) => `<li>${surligner(t, p.cles)}</li>`).join('')}</ul>`
-    : '<p class="cache">Essaie de te rappeler ce que tu sais sur ce titre, puis retourne le post-it…</p>');
-  $('#rActions').innerHTML = rv.vu
-    ? '<button class="btn" data-rv="non">🔁 À revoir</button><button class="btn primary" data-rv="oui">✅ Je sais</button>'
-    : '<button class="btn primary" data-rv="voir">👀 Voir la réponse</button>';
+  const q = rv.q;
+  const phrase = `${esc(q.avant)}<span class="blank">_____</span>${esc(q.apres)}`;
+  $('#rCarte').innerHTML = `<h3>${esc(p.titre)}</h3><p>${phrase}</p>`;
+  if (mode === 'trous') {
+    $('#rActions').innerHTML = '<form id="rForm" class="inline"><input id="rRep" autocomplete="off" placeholder="Ta réponse…"><button class="btn primary">Valider</button></form>';
+    $('#rRep').focus();
+  } else {
+    $('#rActions').innerHTML = `<div class="choix">${q.choix.map((x, k) => `<button class="btn" data-choix="${k}">${esc(x)}</button>`).join('')}</div>`;
+  }
+}
+
+function rvRepondre(reponse) {
+  if (rv.repondu) return;
+  rv.repondu = true;
+  const { p } = rvPostit(rv.items[rv.i]);
+  const a = norm(reponse), b = norm(rv.q.rep);
+  const bon = a === b || (b.length > 5 && lev(a, b) <= 1);
+  const avant = aujourdhui();
+  noter(p, bon);
+  const k = cleJour(new Date());
+  db.revisions[k] = avant + 1;
+  rv.bons += bon ? 1 : 0;
+  const gain = bon ? 10 : 3;
+  rv.xp += gain; gagnerXp(gain);
+  if (avant + 1 === db.objectif) { gagnerXp(20); rv.xp += 20; toast('🎯 Objectif du jour atteint ! +20 XP'); }
+  sauver();
+  $('#rCarte').innerHTML = `<h3>${esc(p.titre)}</h3><p class="${bon ? 'ok' : 'ko'}">${bon ? '✅ Bonne réponse !' : '❌ La réponse était : <b>' + esc(rv.q.rep) + '</b>'}</p>
+    <p>${esc(rv.q.avant)}<mark>${esc(rv.q.rep)}</mark>${esc(rv.q.apres)}</p>`;
+  $('#rActions').innerHTML = '<button class="btn primary" data-rv="suite">Suivant →</button>';
+  $('#rActions button').focus();
+}
+
+function rvCartes(bon) {
+  const { p } = rvPostit(rv.items[rv.i]);
+  const avant = aujourdhui();
+  noter(p, bon);
+  db.revisions[cleJour(new Date())] = avant + 1;
+  rv.bons += bon ? 1 : 0;
+  const gain = bon ? 10 : 3;
+  rv.xp += gain; gagnerXp(gain);
+  if (avant + 1 === db.objectif) { gagnerXp(20); rv.xp += 20; toast('🎯 Objectif du jour atteint ! +20 XP'); }
+  sauver();
+  rv.i++; rv.vu = false;
+  rvRender();
 }
 
 function fermerRevision() { $('#modal').hidden = true; render(); }
@@ -596,17 +879,78 @@ function fermerRevision() { $('#modal').hidden = true; render(); }
 $('#modal').addEventListener('click', (e) => {
   const a = e.target.closest('[data-rv]')?.dataset.rv;
   if (e.target.id === 'modal' || e.target.id === 'fermer' || a === 'fin') { fermerRevision(); return; }
+  const ch = e.target.closest('[data-choix]');
+  if (ch) {
+    rvRepondre(rv.q.choix[+ch.dataset.choix]);
+    return;
+  }
   if (!a) return;
   if (a === 'voir') { rv.vu = true; rvRender(); return; }
-  const { p } = rvPostit(rv.items[rv.i]);
-  p.ok = a === 'oui';
-  const k = cleJour(new Date());
-  db.revisions[k] = (db.revisions[k] || 0) + 1;
-  sauver();
-  rv.i++; rv.vu = false;
-  rvRender();
+  if (a === 'suite') { rv.i++; rvRender(); return; }
+  rvCartes(a === 'oui');
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) fermerRevision(); });
+$('#modal').addEventListener('submit', (e) => { e.preventDefault(); if (e.target.id === 'rForm') rvRepondre($('#rRep').value); });
+document.addEventListener('keydown', (e) => {
+  if ($('#modal').hidden) return;
+  if (e.key === 'Escape') { fermerRevision(); return; }
+  if (rv.i >= rv.items.length || rv.q || rv.mode !== 'cartes' && rv.q) return;
+  if (e.target.tagName === 'INPUT') return;
+  if (!rv.vu && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); rv.vu = true; rvRender(); }
+  else if (rv.vu && e.key === '1') rvCartes(true);
+  else if (rv.vu && e.key === '2') rvCartes(false);
+});
+
+/* ================= Minuteur Focus (Pomodoro) ================= */
+const foc = { run: false, mode: 'focus', total: 25 * 60, reste: 25 * 60, fin: 0, timer: null };
+const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+function bip() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(); o.frequency.value = 880; o.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.4);
+  } catch (e) { /* pas de son */ }
+}
+function majFocus() {
+  $('#focusBtn').textContent = foc.run ? `⏱ ${mmss(foc.reste)}` : '⏱ Focus';
+  $('#fcTemps').textContent = mmss(foc.reste);
+  $('#fcMode').textContent = foc.mode === 'focus' ? 'Concentration' : 'Pause';
+  $('#fcGo').textContent = foc.run ? 'Pause' : 'Démarrer';
+  $('#fcAuj').textContent = `${db.focus[cleJour(new Date())] || 0} min de focus aujourd’hui`;
+}
+function focusReglage(min, mode) {
+  clearInterval(foc.timer);
+  Object.assign(foc, { run: false, mode, total: min * 60, reste: min * 60 });
+  majFocus();
+}
+function focusFini() {
+  clearInterval(foc.timer);
+  foc.run = false;
+  bip();
+  if (foc.mode === 'focus') {
+    const min = Math.round(foc.total / 60), k = cleJour(new Date());
+    db.focus[k] = (db.focus[k] || 0) + min;
+    gagnerXp(min);
+    journaliser('Session de focus terminée', min + ' min');
+    sauver();
+    toast(`⏱ ${min} min de focus ! Prends une pause 🙂`);
+    focusReglage(5, 'pause');
+  } else { toast('Pause terminée, on reprend ?'); focusReglage(25, 'focus'); }
+  if (ui.view === 'dash' || ui.view === 'stats') render();
+}
+function focusBascule() {
+  if (foc.run) { clearInterval(foc.timer); foc.run = false; majFocus(); return; }
+  foc.run = true; foc.fin = Date.now() + foc.reste * 1000;
+  foc.timer = setInterval(() => {
+    foc.reste = Math.max(0, Math.ceil((foc.fin - Date.now()) / 1000));
+    if (foc.reste === 0) focusFini(); else majFocus();
+  }, 500);
+  majFocus();
+}
+$('#focusBtn').addEventListener('click', () => { $('#focusPanel').hidden = !$('#focusPanel').hidden; });
+$('#fcGo').addEventListener('click', focusBascule);
+$('#fcReset').addEventListener('click', () => focusReglage(Math.round(foc.total / 60), foc.mode));
+document.querySelectorAll('[data-fc]').forEach((b) => b.addEventListener('click', () => focusReglage(+b.dataset.fc, b.dataset.fm)));
+document.addEventListener('click', (e) => { if (!e.target.closest('#focusPanel, #focusBtn')) $('#focusPanel').hidden = true; });
 
 /* ================= Restauration ================= */
 $('#import').addEventListener('change', (e) => {
@@ -625,4 +969,5 @@ $('#import').addEventListener('change', (e) => {
   e.target.value = '';
 });
 
+majFocus();
 render();

@@ -16,7 +16,24 @@
       <header class="topbar">
         <div class="crumb" id="crumb"></div>
         <input id="search" type="search" placeholder="Rechercher dans tes post-it…" aria-label="Rechercher">
-        <div class="pill-top"><i class="dot"></i>Enregistré sur cet appareil</div>
+        <div class="focus-wrap">
+          <button id="focusBtn" class="pill-top" type="button">⏱ Focus</button>
+          <div id="focusPanel" class="focus-panel" hidden>
+            <p class="progress" id="fcMode">Concentration</p>
+            <div class="fc-time" id="fcTemps">25:00</div>
+            <div class="actions center">
+              <button id="fcGo" class="btn primary" type="button">Démarrer</button>
+              <button id="fcReset" class="btn" type="button">↺</button>
+            </div>
+            <div class="actions center">
+              <button class="btn ghost" type="button" data-fc="25" data-fm="focus">25 min</button>
+              <button class="btn ghost" type="button" data-fc="50" data-fm="focus">50 min</button>
+              <button class="btn ghost" type="button" data-fc="5" data-fm="pause">Pause 5</button>
+            </div>
+            <p class="muted" id="fcAuj" style="text-align:center"></p>
+          </div>
+        </div>
+        <div class="pill-top saved"><i class="dot"></i>Enregistré sur cet appareil</div>
       </header>
       <div id="view" class="page"></div>
       <footer>Tes cours restent sur ton appareil : rien n’est envoyé sur internet. Pense à « Sauvegarder » de temps en temps.</footer>
@@ -32,6 +49,7 @@
     </div>
   </div>
 
+  <div id="toast" class="toast" hidden></div>
   <input id="import" type="file" accept=".json" hidden>
   <script src="app.js"></script>
 </body>
