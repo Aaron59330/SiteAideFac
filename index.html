@@ -3,41 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>PostItBac – Révise avec des post-it</title>
   <meta name="description" content="Colle ton cours, obtiens des post-it numériques rangés par matière pour réviser le bac.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
-    <aside class="side">
-      <div class="logo">📝 PostItBac</div>
-      <nav id="matieres" aria-label="Matières"></nav>
-      <button id="addMat" class="ghost wide">＋ Nouvelle matière</button>
-      <div class="side-foot">
-        <button id="export" class="ghost wide" title="Télécharger une copie de tous tes cours">⬇ Sauvegarder</button>
-        <label class="ghost btnlike wide">⬆ Restaurer<input id="import" type="file" accept=".json" hidden></label>
-      </div>
-    </aside>
+    <aside class="side" id="side" aria-label="Navigation"></aside>
 
-    <section class="content">
-      <div class="toolbar">
-        <input id="search" type="search" placeholder="🔎 Rechercher dans tous tes post-it…">
-        <button id="newCours" class="primary">＋ Nouveau cours</button>
-      </div>
-      <div id="view"></div>
-      <footer>Tes cours restent sur ton appareil : rien n’est envoyé sur internet.<br>Pense à « Sauvegarder » de temps en temps.</footer>
-    </section>
+    <div class="main">
+      <header class="topbar">
+        <div class="crumb" id="crumb"></div>
+        <input id="search" type="search" placeholder="Rechercher dans tes post-it…" aria-label="Rechercher">
+        <div class="pill-top"><i class="dot"></i>Enregistré sur cet appareil</div>
+      </header>
+      <div id="view" class="page"></div>
+      <footer>Tes cours restent sur ton appareil : rien n’est envoyé sur internet. Pense à « Sauvegarder » de temps en temps.</footer>
+    </div>
   </div>
 
   <div id="modal" class="modal" hidden>
     <div class="modal-box">
-      <button id="fermer" class="ghost close" aria-label="Fermer">✕</button>
+      <button id="fermer" class="btn ghost close" aria-label="Fermer">✕</button>
       <p class="progress" id="rProgress"></p>
       <div id="rCarte" class="carte"></div>
       <div class="actions center" id="rActions"></div>
     </div>
   </div>
 
+  <input id="import" type="file" accept=".json" hidden>
   <script src="app.js"></script>
 </body>
 </html>
