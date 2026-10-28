@@ -11,3 +11,7 @@ Tout fonctionne dans le navigateur (aucun serveur, aucun compte) : ouvrir `index
 - Dates d'examen avec compte à rebours et rythme conseillé
 - Minuteur Pomodoro (focus)
 - Import de fichiers .txt/.md, export Anki, impression PDF, sauvegarde / restauration JSON
+- **Tableurs** (petit Excel intégré) : formules (SOMME, MOYENNE, SI, SOMME.SI, NB.SI, SOMMEPROD, RECHERCHEV, RANG, dates…),
+  références entre feuilles, recopie par glisser, copier/coller (même depuis Excel), annuler/rétablir, mise en forme,
+  formats (nombre, %, €, date), tri, insertion/suppression de lignes et colonnes, graphiques (barres, courbe, camembert),
+  plusieurs feuilles, import/export CSV, modèles (moyenne du bac, suivi des notes, planning, budget)

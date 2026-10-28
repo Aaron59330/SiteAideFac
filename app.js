@@ -24,6 +24,7 @@ function normaliser(d) {
   d.journal = Array.isArray(d.journal) ? d.journal : [];
   d.revisions = d.revisions && typeof d.revisions === 'object' ? d.revisions : {};
   d.focus = d.focus && typeof d.focus === 'object' ? d.focus : {};
+  d.tableurs = Array.isArray(d.tableurs) ? d.tableurs : [];
   d.xp = +d.xp || 0;
   d.objectif = +d.objectif || 10;
   d.matieres.forEach((m) => { m.exam = m.exam || ''; });
@@ -60,7 +61,7 @@ function gagnerXp(n) {
   if (niveau(db.xp) > avant) toast(`⭐ Niveau ${niveau(db.xp)} atteint !`);
 }
 
-const ui = { view: 'dash', mat: 'all', coursId: null, q: '', tab: 'postits', filtre: 'tous' };
+const ui = { view: 'dash', mat: 'all', coursId: null, q: '', tab: 'postits', filtre: 'tous', tabId: null, feuille: 0 };
 
 /* ================= Utilitaires ================= */
 const $ = (s) => document.querySelector(s);
@@ -335,6 +336,8 @@ function renderSide() {
     ${nav('＋', 'Nouveau cours', ui.view === 'new', 'data-nav="new"')}
     ${nav('▦', 'Tous mes cours', ui.view === 'mat' && ui.mat === 'all', 'data-mat="all"')}
     ${nav('🧠', 'Réviser aujourd’hui', false, 'data-nav="rev"')}
+    <div class="sec">Outils</div>
+    ${nav('▥', 'Tableurs', ui.view === 'tableurs' || ui.view === 'sheet', 'data-nav="tableurs"')}
     <div class="sec">Matières</div>
     ${mats}
     ${nav('＋', 'Nouvelle matière', false, 'data-nav="addmat"')}
@@ -550,6 +553,8 @@ function fil() {
   switch (ui.view) {
     case 'journal': return ['Général', 'Journal d’activités'];
     case 'stats': return ['Général', 'Statistiques'];
+    case 'tableurs': return ['Outils', 'Tableurs'];
+    case 'sheet': { const t = tableur(); return ['Tableurs', esc(t ? t.nom : '')]; }
     case 'new': return ['Cours', 'Nouveau cours'];
     case 'mat': return m ? ['Matières', esc(m.nom)] : ['Cours', 'Tous mes cours'];
     case 'cours': { const c = cours(ui.coursId); const mm = c && matiere(c.matiereId); return [esc(mm ? mm.nom : 'Cours'), esc(c ? c.titre : '')]; }
@@ -562,7 +567,8 @@ function render() {
   const [a, b] = fil();
   $('#crumb').innerHTML = `${a} / <b>${b}</b>`;
   $('#view').innerHTML = ui.q.trim() ? vueRecherche()
-    : { dash: vueDash, journal: vueJournal, stats: vueStats, mat: vueMat, new: vueNouveau, cours: vueCours }[ui.view]();
+    : { dash: vueDash, journal: vueJournal, stats: vueStats, mat: vueMat, new: vueNouveau, cours: vueCours, tableurs: vueTableurs, sheet: vueTableur }[ui.view]();
+  if (ui.view === 'sheet' && !ui.q.trim()) initTableur();
   if (ui.view === 'new' && !ui.q.trim()) majCompte();
 }
 
